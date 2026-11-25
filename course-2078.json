@@ -2,16 +2,16 @@
   "schema": 1,
   "courseId": 2078,
   "repository": "LearningOS/2026a-arceos-Cannoner1",
-  "commit": "b0c79c4c85cd7bc58287d80c73944c2427b6933f",
-  "score": 400,
+  "commit": "e960f2c37e8e5f680e61a1062d09860cfe1a1ee0",
+  "score": 600,
   "totalScore": 600,
   "exercises": [
     {
       "name": "print_with_color",
       "max": 100,
-      "score": 0,
-      "status": "fail",
-      "exitCode": 2
+      "score": 100,
+      "status": "pass",
+      "exitCode": 0
     },
     {
       "name": "ramfs_rename",
@@ -23,9 +23,9 @@
     {
       "name": "alt_alloc",
       "max": 100,
-      "score": 0,
-      "status": "fail",
-      "exitCode": 2
+      "score": 100,
+      "status": "pass",
+      "exitCode": 0
     },
     {
       "name": "support_hashmap",
@@ -50,9 +50,9 @@
     }
   ],
   "student": "Cannoner1",
-  "runId": "45549124936",
+  "runId": "45550439048",
   "runAttempt": "1",
   "upload": {
-    "status": "accepted"
+    "status": "pending"
   }
 }
