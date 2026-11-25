@@ -5,6 +5,7 @@ use axhal::trap::{register_trap_handler, SYSCALL};
 use axerrno::LinuxError;
 
 const SYS_EXIT: usize = 93;
+const SYS_PAGE_FAULT=94;
 
 #[register_trap_handler(SYSCALL)]
 fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
@@ -14,7 +15,10 @@ fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
             ax_println!("[SYS_EXIT]: process is exiting ..");
             axtask::exit(tf.arg0() as _)
         },
-        _ => {
+        SYS_PAGE_FAULT=> {
+            
+        },
+         => {
             ax_println!("Unimplemented syscall: {}", syscall_num);
             -LinuxError::ENOSYS.code() as _
         }

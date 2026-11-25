@@ -21,7 +21,7 @@ pub fn load_user_app(fname: &str, uspace: &mut AddrSpace) -> io::Result<()> {
     unsafe {
         core::ptr::copy_nonoverlapping(
             buf.as_ptr(),
-            phys_to_virt(paddr).as_mut_ptr(),
+            phys_to_virt(paddr).as_mut_ptr(), 
             PAGE_SIZE_4K,
         );
     }

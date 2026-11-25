@@ -91,6 +91,7 @@ fn is_init_ok() -> bool {
     INITED_CPUS.load(Ordering::Acquire) == axconfig::SMP
 }
 
+use crate::axlog::*;
 /// The main entry point of the ArceOS runtime.
 ///
 /// It is called from the bootstrapping code in [axhal]. `cpu_id` is the ID of

@@ -67,6 +67,40 @@ impl DirNode {
         children.remove(name);
         Ok(())
     }
+
+    /// Renames a child of this directory (`old` -> `new`).
+    ///
+    /// Both names are plain entry names. An existing `new` is overwritten,
+    /// mirroring the POSIX behavior of `rename(2)`.
+    fn rename_child(&self, old: &str, new: &str) -> VfsResult {
+        let mut children = self.children.write();
+        let src = children.get(old).ok_or(VfsError::NotFound)?.clone();
+        if old == new {
+            return Ok(());
+        }
+
+        let src_is_dir = src.as_any().is::<DirNode>();
+        if let Some(dst) = children.get(new) {
+            let dst_is_dir = dst.as_any().is::<DirNode>();
+            match (src_is_dir, dst_is_dir) {
+                (false, true) => return Err(VfsError::IsADirectory),
+                (true, false) => return Err(VfsError::NotADirectory),
+                // never allow overwriting a non-empty directory
+                (true, true) => {
+                    if let Some(dir) = dst.as_any().downcast_ref::<DirNode>() {
+                        if !dir.children.read().is_empty() {
+                            return Err(VfsError::DirectoryNotEmpty);
+                        }
+                    }
+                }
+                (false, false) => {}
+            }
+        }
+
+        children.remove(old);
+        children.insert(new.into(), src);
+        Ok(())
+    }
 }
 
 impl VfsNodeOps for DirNode {
@@ -162,6 +196,31 @@ impl VfsNodeOps for DirNode {
             Err(VfsError::InvalidInput) // remove '.' or '..
         } else {
             self.remove_node(name)
+        }
+    }
+
+    fn rename(&self, src_path: &str, dst_path: &str) -> VfsResult {
+        log::debug!("rename at ramfs: {} -> {}", src_path, dst_path);
+        let (src_name, src_rest) = split_path(src_path);
+        let (dst_name, dst_rest) = split_path(dst_path);
+        match (src_rest, dst_rest) {
+            (None, None) => {
+                if src_name.is_empty() || dst_name.is_empty() {
+                    return Err(VfsError::InvalidInput);
+                }
+                self.rename_child(src_name, dst_name)
+            }
+            // Rename only, NOT move. So the parent must be the same directory.
+            (Some(src_sub), Some(dst_sub)) if src_name == dst_name => {
+                let subdir = self
+                    .children
+                    .read()
+                    .get(src_name)
+                    .ok_or(VfsError::NotFound)?
+                    .clone();
+                subdir.rename(src_sub, dst_sub)
+            }
+            _ => Err(VfsError::Unsupported),
         }
     }
 

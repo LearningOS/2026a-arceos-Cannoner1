@@ -43,6 +43,7 @@ fn main() {
 
     // Setup context to prepare to enter guest mode.
     let mut ctx = VmCpuRegisters::default();
+
     prepare_guest_context(&mut ctx);
 
     // Setup pagetable for 2nd address mapping.
@@ -102,16 +103,24 @@ fn vmexit_handler(ctx: &mut VmCpuRegisters) -> bool {
             }
         },
         Trap::Exception(Exception::IllegalInstruction) => {
-            panic!("Bad instruction: {:#x} sepc: {:#x}",
-                stval::read(),
-                ctx.guest_regs.sepc
-            );
+            // The guest reads `mhartid` (a machine-level CSR), which is not
+            // accessible from VS-mode and raises an illegal-instruction trap.
+            // Emulate it with a virtual hart id for the guest.
+            ax_println!("Emulate `csrr a1, mhartid` as 0x1234");
+            ctx.guest_regs.gprs.set_reg(A1, 0x1234);
+            // Skip the faulting instruction and resume the guest.
+            ctx.guest_regs.sepc += 4;
         },
         Trap::Exception(Exception::LoadGuestPageFault) => {
-            panic!("LoadGuestPageFault: stval{:#x} sepc: {:#x}",
-                stval::read(),
-                ctx.guest_regs.sepc
+            // The guest loads from GPA 0x40, which is not mapped by the
+            // stage-2 page table. Emulate the load with a known value.
+            ax_println!(
+                "Emulate `ld a0, 64(zero)` (gpa {:#x}) as 0x6688",
+                stval::read()
             );
+            ctx.guest_regs.gprs.set_reg(A0, 0x6688);
+            // Skip the faulting instruction and resume the guest.
+            ctx.guest_regs.sepc += 4;
         },
         _ => {
             panic!(

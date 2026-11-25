@@ -8,6 +8,7 @@ use axtask::current;
 use axtask::TaskExtRef;
 use axhal::paging::MappingFlags;
 use arceos_posix_api as api;
+use memory_addr::{MemoryAddr, VirtAddr, VirtAddrRange, PAGE_SIZE_4K};
 
 const SYS_IOCTL: usize = 29;
 const SYS_OPENAT: usize = 56;
@@ -131,16 +132,90 @@ fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
     ret
 }
 
-#[allow(unused_variables)]
 fn sys_mmap(
     addr: *mut usize,
     length: usize,
     prot: i32,
     flags: i32,
     fd: i32,
-    _offset: isize,
+    offset: isize,
 ) -> isize {
-    unimplemented!("no sys_mmap!");
+    let prot = MmapProt::from_bits_truncate(prot);
+    let mmap_flags = MmapFlags::from_bits_truncate(flags);
+    let map_flags = MappingFlags::from(prot);
+
+    if length == 0 {
+        return -LinuxError::EINVAL.code() as isize;
+    }
+
+    // The mapping length is rounded up to a page boundary.
+    let size = match length.checked_add(PAGE_SIZE_4K - 1) {
+        Some(len) => len & !(PAGE_SIZE_4K - 1),
+        None => return -LinuxError::EINVAL.code() as isize,
+    };
+
+    let cur = current();
+    let mut aspace = cur.task_ext().aspace.lock();
+
+    // Pick the virtual address: use the hint if MAP_FIXED is given, otherwise
+    // search for a free area. Avoid returning 0, which user code regards as
+    // MAP_FAILED (`NULL`) in this exercise.
+    let vaddr = if !addr.is_null() && mmap_flags.contains(MmapFlags::MAP_FIXED) {
+        VirtAddr::from(addr as usize).align_down_4k()
+    } else {
+        let hint = if addr.is_null() {
+            VirtAddr::from(PAGE_SIZE_4K)
+        } else {
+            VirtAddr::from(addr as usize).align_down_4k()
+        };
+        let limit = VirtAddrRange::from_start_size(aspace.base(), aspace.size());
+        match aspace.find_free_area(hint, size, limit) {
+            Some(vaddr) => vaddr,
+            None => return -LinuxError::ENOMEM.code() as isize,
+        }
+    };
+
+    // Allocate and populate the physical frames eagerly so that we can copy
+    // the file content into them below (and the user can read them without
+    // faulting).
+    if aspace.map_alloc(vaddr, size, map_flags, true).is_err() {
+        return -LinuxError::ENOMEM.code() as isize;
+    }
+
+    // File-backed mapping: copy the file content starting at `offset` into
+    // the freshly mapped memory.
+    if !mmap_flags.contains(MmapFlags::MAP_ANONYMOUS) && fd >= 0 {
+        let pos = api::sys_lseek(fd, offset as _, 0 /* SEEK_SET */);
+        if pos < 0 {
+            let _ = aspace.unmap(vaddr, size);
+            return pos as isize;
+        }
+
+        let mut buf = ::alloc::vec![0u8; size];
+        let mut read_len = 0;
+        while read_len < size {
+            let n = api::sys_read(
+                fd,
+                buf[read_len..].as_mut_ptr() as *mut c_void,
+                size - read_len,
+            );
+            if n < 0 {
+                let _ = aspace.unmap(vaddr, size);
+                return n as isize;
+            }
+            if n == 0 {
+                break; // EOF
+            }
+            read_len += n as usize;
+        }
+
+        if read_len > 0 && aspace.write(vaddr, &buf[..read_len]).is_err() {
+            let _ = aspace.unmap(vaddr, size);
+            return -LinuxError::EFAULT.code() as isize;
+        }
+    }
+
+    vaddr.as_usize() as isize
 }
 
 fn sys_openat(dfd: c_int, fname: *const c_char, flags: c_int, mode: api::ctypes::mode_t) -> isize {
