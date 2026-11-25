@@ -4,11 +4,8 @@
 #[cfg(feature = "axstd")]
 use axstd::println;
 
-
-use axstd::os::arceos::modules::axlog::*;
-//with_color!(34,"[WithColor]: Hello, Arceos!");
-
 #[cfg_attr(feature = "axstd", no_mangle)]
 fn main() {
-    ax_println!("\u{1B}[{}m{}\u{1B}[m",34,"[WithColor]: Hello, Arceos!\n");
+    // ANSI 转义序列：32 = 绿色，0 = 恢复默认颜色。
+    println!("\x1b[32mHello, Arceos!\x1b[0m");
 }
